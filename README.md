@@ -52,4 +52,4 @@ If you get the following error in the Home Assistant system log:
 The stt integration does not support any configuration parameters, got [{'platform': 'openai_stt', 'api_key': 'YOUR_API_KEY'}]. Please remove the configuration parameters from your configuration.
 ```
 
-This issues is a known (bug)[https://github.com/home-assistant/core/issues/97161] in Home Assistant >= 2023.7. However, the reported message does not affect the functionality of this integration, it should still work as expected.
+This issues is a known [bug](https://github.com/home-assistant/core/issues/97161) in Home Assistant >= 2023.7. The reported message does not affect the functionality of this integration, it should still work.
