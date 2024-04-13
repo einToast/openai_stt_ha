@@ -22,7 +22,7 @@ You can install this integration via [HACS](https://hacs.xyz/).
 3. Place all the files from this repository in the `openai_stt` directory.
 4. Restart Home Assistant.
 
-## Configure
+## Configuration
 
 You need to create an account on the [OpenAI website](https://platform.openai.com/signup) and get an [API key](https://platform.openai.com/api-keys) .
 Then add the following to your `configuration.yaml`:
