@@ -1,5 +1,5 @@
 {
-    "name": "OpenAI Wisper Speech-To-Text",
+    "name": "OpenAI Wisper API",
     "homeassistant": "2024.1.0",
     "render_readme": true
 }
