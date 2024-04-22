@@ -12,7 +12,7 @@ You can install this integration via [HACS](https://hacs.xyz/).
 2. Add:
    - Repository: `https://github.com/einToast/openai_stt_ha`
    - Category: Integration
-3. Install the "OpenAI Whisper Speech-To-Text" integration.
+3. Install the "OpenAI Whisper API" integration.
 4. Restart Home Assistant.
 
 ### Manual
