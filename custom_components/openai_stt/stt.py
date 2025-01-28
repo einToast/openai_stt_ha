@@ -106,7 +106,7 @@ MODEL_SCHEMA = vol.In(SUPPORTED_MODELS)
 PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_API_KEY): cv.string,
-        vol.Optional(CONF_API_URL): cv.string,
+        vol.Optional(CONF_API_URL, default=DEFAULT_API_URL): cv.string,
         vol.Optional(CONF_MODEL, default=DEFAULT_MODEL): cv.string,
         vol.Optional(CONF_PROMPT, default=DEFAULT_PROMPT): cv.string,
         vol.Optional(CONF_TEMP, default=CONF_TEMP): cv.positive_int,
