@@ -138,7 +138,6 @@ class OpenAISTTProvider(Provider):
         self._model = model
         self._prompt = prompt
         self._temperature = temperature
-        # OpenAI client with API Key and URL
         self._client = get_async_client(hass)
 
     @property
