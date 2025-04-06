@@ -1,10 +1,9 @@
 {
   "domain": "openai_stt",
-  "name": "OpenAI Wisper API",
+  "name": "OpenAI Whisper API",
   "codeowners": ["@einToast"],
   "documentation": "https://github.com/einToast/openai_stt_ha",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/einToast/openai_stt_ha/issues",
-  "requirements": ["openai>=1.59.7"],
-  "version": "1.0.1"
+  "version": "1.1.0"
 }
