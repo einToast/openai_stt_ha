@@ -188,7 +188,7 @@ class OpenAISTTProvider(Provider):
             wf.setframerate(metadata.sample_rate)
             wf.writeframes(audio_data)
 
-        file = ("wisper_audio.wav", wav_stream, "audio/wav")
+        file = ("whisper_audio.wav", wav_stream, "audio/wav")
 
         def job():
             # Create transcription
