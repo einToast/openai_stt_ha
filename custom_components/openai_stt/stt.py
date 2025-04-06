@@ -174,12 +174,16 @@ class OpenAISTTProvider(Provider):
     async def async_process_audio_stream(
         self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]
     ) -> SpeechResult:
+        _LOGGER.debug(
+            "Start processing audio stream for language: %s", metadata.language
+        )
+
         # Collect data
         audio_data = b""
         async for chunk in stream:
             audio_data += chunk
 
-        _LOGGER.debug("used model: %s", self._model)
+        _LOGGER.debug("Audio data size: %d bytes", len(audio_data))
 
         # Convert audio data to the correct format
         wav_stream = io.BytesIO()
@@ -205,13 +209,31 @@ class OpenAISTTProvider(Provider):
 
         url = f"{self._api_url}/audio/transcriptions"
 
-        response = await self._client.post(
-            url,
-            headers=headers,
-            files=files,
-            timeout=httpx.Timeout(10.0),
-        )
+        _LOGGER.debug("Sending request to API: %s", url)
 
-        result = response.json()
+        try:
+            # Send the request to the API
+            response = await self._client.post(
+                url,
+                headers=headers,
+                files=files,
+                timeout=httpx.Timeout(10.0),
+            )
+            response.raise_for_status()
+            result = response.json()
+            _LOGGER.debug("API response: %s", result)
+        except httpx.HTTPError as err:
+            if hasattr(err, "response") and err.response:
+                _LOGGER.error(
+                    "HTTP error %s: %s",
+                    err.response.status_code,
+                    err.response.json()["error"]["message"],
+                )
+            else:
+                _LOGGER.error("HTTP error: %s", err)
+            return SpeechResult("", SpeechResultState.ERROR)
+        except Exception as err:
+            _LOGGER.error("Error: %s", err)
+            return SpeechResult("", SpeechResultState.ERROR)
 
         return SpeechResult(result["text"], SpeechResultState.SUCCESS)
