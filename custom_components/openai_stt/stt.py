@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import logging
-import os
 from collections.abc import AsyncIterable
-from openai import OpenAI
-import wave
 import io
+import logging
+import wave
 
-import async_timeout
+import httpx
 import voluptuous as vol
+
 from homeassistant.components.stt import (
     AudioBitRates,
     AudioChannels,
@@ -20,8 +19,8 @@ from homeassistant.components.stt import (
     SpeechResult,
     SpeechResultState,
 )
-
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.httpx_client import get_async_client
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -140,7 +139,7 @@ class OpenAISTTProvider(Provider):
         self._prompt = prompt
         self._temperature = temperature
         # OpenAI client with API Key and URL
-        self.client = OpenAI(api_key=self._api_key, base_url=self._api_url)
+        self._client = get_async_client(hass)
 
     @property
     def supported_languages(self) -> list[str]:
@@ -175,11 +174,12 @@ class OpenAISTTProvider(Provider):
     async def async_process_audio_stream(
         self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]
     ) -> SpeechResult:
-        
         # Collect data
         audio_data = b""
         async for chunk in stream:
             audio_data += chunk
+
+        _LOGGER.debug("used model: %s", self._model)
 
         # Convert audio data to the correct format
         wav_stream = io.BytesIO()
@@ -190,26 +190,28 @@ class OpenAISTTProvider(Provider):
             wf.setframerate(metadata.sample_rate)
             wf.writeframes(audio_data)
 
-        file = ("whisper_audio.wav", wav_stream, "audio/wav")
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+        }
 
-        def job():
-            # Create transcription
-            transcription = self.client.audio.transcriptions.create(
-                model=self._model,
-                language=metadata.language,
-                prompt=self._prompt,
-                temperature=self._temperature,
-                response_format="json",
-                file=file,
-            )
-            return transcription
+        files = {
+            "file": ("whisper_audio.wav", wav_stream.getvalue(), "audio/wav"),
+            "model": (None, self._model),
+            "language": (None, metadata.language),
+            "prompt": (None, self._prompt),
+            "temperature": (None, str(self._temperature)),
+            "response_format": (None, "json"),
+        }
 
-        async with async_timeout.timeout(10):
-            assert self.hass
-            response = await self.hass.async_add_executor_job(job)
-            if response.text:
-                return SpeechResult(
-                    response.text,
-                    SpeechResultState.SUCCESS,
-                )
-            return SpeechResult("", SpeechResultState.ERROR)
+        url = f"{self._api_url}/audio/transcriptions"
+
+        response = await self._client.post(
+            url,
+            headers=headers,
+            files=files,
+            timeout=httpx.Timeout(10.0),
+        )
+
+        result = response.json()
+
+        return SpeechResult(result["text"], SpeechResultState.SUCCESS)
