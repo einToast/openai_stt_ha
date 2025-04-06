@@ -33,7 +33,7 @@ CONF_PROMPT = "prompt"
 CONF_TEMP = "temperature"
 
 DEFAULT_API_URL = "https://api.openai.com/v1"
-DEFAULT_MODEL = "whisper-1"
+DEFAULT_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_PROMPT = ""
 DEFAULT_TEMP = 0
 
