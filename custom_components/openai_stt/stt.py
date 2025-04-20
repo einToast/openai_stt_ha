@@ -22,7 +22,8 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.httpx_client import get_async_client
 
-from . import http_client, websocket_client
+from .http_client import OpenAIHTTPClient
+from .websocket_client import OpenAIWebSocketClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -173,9 +174,7 @@ class OpenAISTTProvider(Provider):
         self._temperature = temperature
         self._realtime = realtime
         self._noise_reduction = noise_reduction
-        self._client = (
-            async_get_clientsession(self.hass) if realtime else get_async_client(hass)
-        )
+        self._client = self._create_client()
 
     @property
     def supported_languages(self) -> list[str]:
@@ -207,29 +206,31 @@ class OpenAISTTProvider(Provider):
         """Return a list of supported channels."""
         return [AudioChannels.CHANNEL_MONO]
 
-    async def async_process_audio_stream(
-        self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]
-    ) -> SpeechResult:
-        """Process audio stream using the configured method (HTTP or WebSocket)."""
+    def _create_client(self):
+        """Create and return the appropriate client based on configuration."""
         if self._realtime:
-            return await websocket_client.async_process_audio_stream(
-                self._client,
+            # Use WebSocket client for OpenAI Realtime API
+            return OpenAIWebSocketClient(
+                async_get_clientsession(self.hass),
                 self._api_key,
                 self._api_url,
                 self._model,
                 self._prompt,
                 self._noise_reduction,
-                metadata,
-                stream,
             )
-        else:
-            return await http_client.async_process_audio_stream(
-                self._client,
-                self._api_key,
-                self._api_url,
-                self._model,
-                self._prompt,
-                self._temperature,
-                metadata,
-                stream,
-            )
+
+        # Use HTTP client for OpenAI Transcription API
+        return OpenAIHTTPClient(
+            get_async_client(self.hass),
+            self._api_key,
+            self._api_url,
+            self._model,
+            self._prompt,
+            self._temperature,
+        )
+
+    async def async_process_audio_stream(
+        self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]
+    ) -> SpeechResult:
+        """Process audio stream using the configured method (HTTP or WebSocket)."""
+        return await self._client.async_process_audio_stream(metadata, stream)
