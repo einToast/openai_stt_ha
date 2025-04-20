@@ -20,7 +20,6 @@ from homeassistant.components.stt import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.httpx_client import get_async_client
 
 from .http_client import OpenAIHTTPClient
 from .websocket_client import OpenAIWebSocketClient
@@ -221,7 +220,7 @@ class OpenAISTTProvider(Provider):
 
         # Use HTTP client for OpenAI Transcription API
         return OpenAIHTTPClient(
-            get_async_client(self.hass),
+            async_get_clientsession(self.hass),
             self._api_key,
             self._api_url,
             self._model,
@@ -233,4 +232,7 @@ class OpenAISTTProvider(Provider):
         self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]
     ) -> SpeechResult:
         """Process audio stream using the configured method (HTTP or WebSocket)."""
+        _LOGGER.debug(
+            "Processing audio stream with %s", self._client.__class__.__name__
+        )
         return await self._client.async_process_audio_stream(metadata, stream)

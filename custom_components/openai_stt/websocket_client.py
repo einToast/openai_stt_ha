@@ -10,7 +10,7 @@ import logging
 import time
 from typing import Final
 
-import aiohttp
+from aiohttp import ClientError, WSCloseCode, WSMsgType
 
 from homeassistant.components.stt import SpeechMetadata, SpeechResult, SpeechResultState
 
@@ -65,7 +65,6 @@ class OpenAIWebSocketClient:
 
                 # Set start time after sending all audio data
                 self.start_time = time.perf_counter()
-                _LOGGER.debug("Starting server processing time measurement")
 
         except asyncio.CancelledError:
             _LOGGER.debug("send_audio() was cancelled")
@@ -73,7 +72,7 @@ class OpenAIWebSocketClient:
             _LOGGER.exception("Error sending audio")
             if not self.ws.closed:
                 await self.ws.close(
-                    code=aiohttp.WSCloseCode.INTERNAL_ERROR,
+                    code=WSCloseCode.INTERNAL_ERROR,
                     message=b"Error sending audio",
                 )
 
@@ -83,7 +82,7 @@ class OpenAIWebSocketClient:
         try:
             async with asyncio.timeout(WEBSOCKET_TIMEOUT):
                 async for msg in self.ws:
-                    if msg.type == aiohttp.WSMsgType.TEXT:
+                    if msg.type == WSMsgType.TEXT:
                         data = json.loads(msg.data)
                         msg_type = data.get("type")
                         _LOGGER.debug("Received response: %s", data)
@@ -113,10 +112,10 @@ class OpenAIWebSocketClient:
                                 )
                             _LOGGER.debug('Final: "%s"', final_text)
                             return final_text
-                    elif msg.type == aiohttp.WSMsgType.ERROR:
+                    elif msg.type == WSMsgType.ERROR:
                         _LOGGER.error("WebSocket error: %s", self.ws.exception())
                         break
-                    elif msg.type == aiohttp.WSMsgType.CLOSED:
+                    elif msg.type == WSMsgType.CLOSED:
                         _LOGGER.debug("WebSocket closed by server")
                         break
         except TimeoutError:
@@ -144,6 +143,9 @@ class OpenAIWebSocketClient:
                 },
                 "turn_detection": {
                     "type": "server_vad",
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 500,
+                    "threshold": 0.5,
                 },
             },
         }
@@ -199,11 +201,7 @@ class OpenAIWebSocketClient:
     async def async_process_audio_stream(
         self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]
     ) -> SpeechResult:
-        """Process audio stream using WebSocket."""
-        _LOGGER.debug(
-            "Start processing audio stream via WebSocket for language: %s",
-            metadata.language,
-        )
+        """Process audio stream via WebSocket to OpenAI Realtime API."""
 
         uri = f"{self.api_url}/realtime?intent=transcription"
         headers = {
@@ -216,8 +214,6 @@ class OpenAIWebSocketClient:
             async with self.client.ws_connect(uri, headers=headers, heartbeat=30) as ws:
                 self.ws = ws
                 self.start_time = 0  # Reset start_time
-                
-                _LOGGER.debug("Language: %s", metadata.language)
 
                 # Send initial configuration
                 config = self._create_session_config(metadata.language)
@@ -246,7 +242,7 @@ class OpenAIWebSocketClient:
 
                 return SpeechResult(final_text, SpeechResultState.SUCCESS)
 
-        except aiohttp.ClientError as err:
+        except ClientError as err:
             _LOGGER.error("WebSocket connection error: %s", err)
             return SpeechResult("", SpeechResultState.ERROR)
         except Exception:

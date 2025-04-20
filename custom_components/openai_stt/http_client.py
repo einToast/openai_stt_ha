@@ -8,7 +8,7 @@ import logging
 import time
 import wave
 
-import httpx
+from aiohttp import ClientError, ClientResponseError, FormData
 
 from homeassistant.components.stt import SpeechMetadata, SpeechResult, SpeechResultState
 
@@ -55,45 +55,50 @@ class OpenAIHTTPClient:
 
     def _prepare_request_data(
         self, language: str, wav_data: bytes
-    ) -> tuple[dict, dict]:
+    ) -> tuple[dict, FormData]:
         """Prepare headers and form data for the API request."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
         }
 
-        files = {
-            "file": ("whisper_audio.wav", wav_data, "audio/wav"),
-            "model": (None, self.model),
-            "language": (None, language),
-            "prompt": (None, self.prompt),
-            "temperature": (None, str(self.temperature)),
-            "response_format": (None, "json"),
-        }
+        form = FormData()
+        form.add_field(
+            "file", wav_data, filename="whisper_audio.wav", content_type="audio/wav"
+        )
+        form.add_field("model", self.model)
+        form.add_field("language", language)
+        form.add_field("prompt", self.prompt)
+        form.add_field("temperature", str(self.temperature))
+        form.add_field("response_format", "json")
 
         _LOGGER.debug(
-            "Preparing request to API: %s",
-            {k: v for k, v in files.items() if k != "file"},
+            "Preparing request to API with parameters: model=%s, language=%s, prompt=%s, temperature=%s",
+            self.model,
+            language,
+            self.prompt,
+            self.temperature,
         )
 
-        return headers, files
+        return headers, form
 
     async def _send_request(
         self,
         url: str,
         headers: dict,
-        files: dict,
+        form: FormData,
     ) -> SpeechResult:
         """Send HTTP request to the API and process the response."""
         try:
             start_time = time.perf_counter()
+
             response = await self.client.post(
                 url,
                 headers=headers,
-                files=files,
-                timeout=httpx.Timeout(10.0),
+                data=form,
+                timeout=10,
             )
             response.raise_for_status()
-            result = response.json()
+            result = await response.json()
             _LOGGER.debug("API response: %s", result)
 
             duration = time.perf_counter() - start_time
@@ -101,19 +106,25 @@ class OpenAIHTTPClient:
 
             final_text = result.get("text", "").strip()
 
+            _LOGGER.debug("Transcription result: %s", final_text)
+
             if not final_text:
                 _LOGGER.warning("HTTP transcription resulted in empty text")
                 return SpeechResult("", SpeechResultState.SUCCESS)
 
             return SpeechResult(final_text, SpeechResultState.SUCCESS)
 
-        except httpx.HTTPError as err:
-            if hasattr(err, "response") and err.response:
-                _LOGGER.error(
-                    "HTTP error %s: %s",
-                    err.response.status_code,
-                    err.response.json()["error"]["message"],
-                )
+        except ClientError as err:
+            if isinstance(err, ClientResponseError):
+                try:
+                    error_json = await err.response.json()
+                    _LOGGER.error(
+                        "HTTP error %s: %s",
+                        err.status,
+                        error_json["error"]["message"],
+                    )
+                except Exception:
+                    _LOGGER.exception("Error parsing error response")
             else:
                 _LOGGER.error("HTTP error: %s", err)
             return SpeechResult("", SpeechResultState.ERROR)
@@ -124,21 +135,17 @@ class OpenAIHTTPClient:
     async def async_process_audio_stream(
         self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]
     ) -> SpeechResult:
-        """Process audio stream via HTTP POST to OpenAI Whisper API."""
-        _LOGGER.debug(
-            "Start processing audio stream via HTTP for language: %s",
-            metadata.language,
-        )
+        """Process audio stream via HTTP POST to OpenAI Transcription API."""
 
         # Collect and convert audio data
         audio_data = await self._collect_audio_data(stream)
         wav_data = self._convert_to_wav(metadata, audio_data)
 
         # Prepare request data
-        headers, files = self._prepare_request_data(metadata.language, wav_data)
+        headers, form = self._prepare_request_data(metadata.language, wav_data)
 
         # Send request and get response
         url = f"{self.api_url}/audio/transcriptions"
         _LOGGER.debug("Sending request to API: %s", url)
 
-        return await self._send_request(url, headers, files)
+        return await self._send_request(url, headers, form)
