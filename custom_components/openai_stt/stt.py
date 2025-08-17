@@ -1,11 +1,10 @@
+"""Setting up OpenAISTTProvider."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterable
-import io
 import logging
-import wave
 
-import httpx
 import voluptuous as vol
 
 from homeassistant.components.stt import (
@@ -17,29 +16,41 @@ from homeassistant.components.stt import (
     Provider,
     SpeechMetadata,
     SpeechResult,
-    SpeechResultState,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.httpx_client import get_async_client
+
+from .http_client import OpenAIHTTPClient
+from .websocket_client import OpenAIWebSocketClient
 
 _LOGGER = logging.getLogger(__name__)
-
 
 CONF_API_KEY = "api_key"
 CONF_API_URL = "api_url"
 CONF_MODEL = "model"
 CONF_PROMPT = "prompt"
 CONF_TEMP = "temperature"
+CONF_REALTIME = "realtime"
+CONF_NOISE_REDUCTION = "noise_reduction"
 
 DEFAULT_API_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_PROMPT = ""
 DEFAULT_TEMP = 0
+DEFAULT_REALTIME = False
+DEFAULT_NOISE_REDUCTION = None
 
 SUPPORTED_MODELS = [
     "whisper-1",
     "gpt-4o-mini-transcribe",
     "gpt-4o-transcribe",
+]
+
+SUPPORTED_NOISE_REDUCTION = [
+    None,
+    "near_field",
+    "far_field",
 ]
 
 SUPPORTED_LANGUAGES = [
@@ -103,6 +114,7 @@ SUPPORTED_LANGUAGES = [
 ]
 
 MODEL_SCHEMA = vol.In(SUPPORTED_MODELS)
+NOISE_REDUCTION_SCHEMA = vol.In(SUPPORTED_NOISE_REDUCTION)
 
 PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend(
     {
@@ -111,24 +123,45 @@ PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_MODEL, default=DEFAULT_MODEL): MODEL_SCHEMA,
         vol.Optional(CONF_PROMPT, default=DEFAULT_PROMPT): cv.string,
         vol.Optional(CONF_TEMP, default=DEFAULT_TEMP): cv.positive_int,
+        vol.Optional(CONF_REALTIME, default=DEFAULT_REALTIME): cv.boolean,
+        vol.Optional(
+            CONF_NOISE_REDUCTION, default=DEFAULT_NOISE_REDUCTION
+        ): NOISE_REDUCTION_SCHEMA,
     }
 )
 
 
-async def async_get_engine(hass, config, discovery_info=None):
-    """Set up the OpenAI STT component."""
+async def async_get_engine(
+    hass: HomeAssistant, config: dict, discovery_info: dict | None = None
+) -> OpenAISTTProvider:
+    """Return the OpenAI STT provider."""
     api_key = config[CONF_API_KEY]
     api_url = config.get(CONF_API_URL, DEFAULT_API_URL)
     model = config.get(CONF_MODEL, DEFAULT_MODEL)
     prompt = config.get(CONF_PROMPT, DEFAULT_PROMPT)
     temperature = config.get(CONF_TEMP, DEFAULT_TEMP)
-    return OpenAISTTProvider(hass, api_key, api_url, model, prompt, temperature)
+    realtime = config.get(CONF_REALTIME, DEFAULT_REALTIME)
+    noise_reduction = config.get(CONF_NOISE_REDUCTION, DEFAULT_NOISE_REDUCTION)
+
+    return OpenAISTTProvider(
+        hass, api_key, api_url, model, prompt, temperature, realtime, noise_reduction
+    )
 
 
 class OpenAISTTProvider(Provider):
     """The OpenAI STT provider."""
 
-    def __init__(self, hass, api_key, api_url, model, prompt, temperature) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api_key: str,
+        api_url: str,
+        model: str,
+        prompt: str,
+        temperature: int,
+        realtime: bool,
+        noise_reduction: str,
+    ) -> None:
         """Init OpenAI STT service."""
         self.hass = hass
         self.name = "OpenAI STT"
@@ -138,7 +171,9 @@ class OpenAISTTProvider(Provider):
         self._model = model
         self._prompt = prompt
         self._temperature = temperature
-        self._client = get_async_client(hass)
+        self._realtime = realtime
+        self._noise_reduction = noise_reduction
+        self._client = self._create_client()
 
     @property
     def supported_languages(self) -> list[str]:
@@ -170,69 +205,34 @@ class OpenAISTTProvider(Provider):
         """Return a list of supported channels."""
         return [AudioChannels.CHANNEL_MONO]
 
+    def _create_client(self):
+        """Create and return the appropriate client based on configuration."""
+        if self._realtime:
+            # Use WebSocket client for OpenAI Realtime API
+            return OpenAIWebSocketClient(
+                async_get_clientsession(self.hass),
+                self._api_key,
+                self._api_url,
+                self._model,
+                self._prompt,
+                self._noise_reduction,
+            )
+
+        # Use HTTP client for OpenAI Transcription API
+        return OpenAIHTTPClient(
+            async_get_clientsession(self.hass),
+            self._api_key,
+            self._api_url,
+            self._model,
+            self._prompt,
+            self._temperature,
+        )
+
     async def async_process_audio_stream(
         self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]
     ) -> SpeechResult:
+        """Process audio stream using the configured method (HTTP or WebSocket)."""
         _LOGGER.debug(
-            "Start processing audio stream for language: %s", metadata.language
+            "Processing audio stream with %s", self._client.__class__.__name__
         )
-
-        # Collect data
-        audio_data = b""
-        async for chunk in stream:
-            audio_data += chunk
-
-        _LOGGER.debug("Audio data size: %d bytes", len(audio_data))
-
-        # Convert audio data to the correct format
-        wav_stream = io.BytesIO()
-
-        with wave.open(wav_stream, "wb") as wf:
-            wf.setnchannels(metadata.channel)
-            wf.setsampwidth(metadata.bit_rate // 8)
-            wf.setframerate(metadata.sample_rate)
-            wf.writeframes(audio_data)
-
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-        }
-
-        files = {
-            "file": ("whisper_audio.wav", wav_stream.getvalue(), "audio/wav"),
-            "model": (None, self._model),
-            "language": (None, metadata.language),
-            "prompt": (None, self._prompt),
-            "temperature": (None, str(self._temperature)),
-            "response_format": (None, "json"),
-        }
-
-        url = f"{self._api_url}/audio/transcriptions"
-
-        _LOGGER.debug("Sending request to API: %s", url)
-
-        try:
-            # Send the request to the API
-            response = await self._client.post(
-                url,
-                headers=headers,
-                files=files,
-                timeout=httpx.Timeout(10.0),
-            )
-            response.raise_for_status()
-            result = response.json()
-            _LOGGER.debug("API response: %s", result)
-        except httpx.HTTPError as err:
-            if hasattr(err, "response") and err.response:
-                _LOGGER.error(
-                    "HTTP error %s: %s",
-                    err.response.status_code,
-                    err.response.json()["error"]["message"],
-                )
-            else:
-                _LOGGER.error("HTTP error: %s", err)
-            return SpeechResult("", SpeechResultState.ERROR)
-        except Exception as err:
-            _LOGGER.error("Error: %s", err)
-            return SpeechResult("", SpeechResultState.ERROR)
-
-        return SpeechResult(result["text"], SpeechResultState.SUCCESS)
+        return await self._client.async_process_audio_stream(metadata, stream)
