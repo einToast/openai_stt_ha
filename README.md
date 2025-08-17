@@ -37,22 +37,22 @@ stt:
     noise_reduction: null
 ```
 
-Parameters:
+### Parameters:
 
 - `api_key` (Required): Your OpenAI API key
-- `realtime` (Optional): If set to `true`, the integration will use the OpenAI Realtime API. This should generate faster results. The default is `false`. Keep in mind that the Realtime API is currently in beta and may not be as stable as the regular Audio API. See the [OpenAI documentation](https://platform.openai.com/docs/guides/realtime-transcription) for more information
+- `realtime` (Optional): If set to `true`, the integration will use the OpenAI Realtime API. This should generate faster results. If set to `false`, the integration will use the regular OpenAI Transcription API. The default is `false`. Keep in mind that the Realtime API is currently in beta and may not be as stable as the Transcription API. See the [OpenAI documentation](https://platform.openai.com/docs/guides/realtime-transcription) for more information
 - `api_url` (Optional): The API URL to use. Specify this to use any compatible OpenAI API. The default is `https://api.openai.com/v1`.
 - `model` (Optional): The model to use. Currently, the [supported models](#supported-models) are `gpt-4o-mini-transcribe`, `gpt-4o-transcribe` and `whisper-1`. The default is `gpt-4o-mini-transcribe`. All available models are listed in the [OpenAI model list](https://platform.openai.com/docs/models) under the Transcription section
 - `prompt` (Optional): The prompt to use. The default is an empty string. See the [OpenAI documentation](https://platform.openai.com/docs/guides/speech-to-text#prompting) for more information
-- `temperature` (Optional): The temperature to use between 0 and 1. A higher temperature will make the model more creative, but less accurate. The default is 0. Only applicable when `realtime: false`
+- `temperature` (Optional): The temperature to use between `0` and `1`. A higher temperature will make the model more creative, but less accurate. The default is `0`. Only applicable when `realtime: false`
 - `noise_reduction` (Optional): The noise reduction to use. The available options are `null`, `near_field` and `far_field`. `near_field` is for close-range audio, `far_field` is for distant audio, `null` turns off noise reduction. The default is `null`. Only applicable when `realtime: true`
 
 ## Supported Models
 See the accuracy comparison of the models [here](https://openai.com/index/introducing-our-next-generation-audio-models/).
 
-- `gpt-4o-mini-transcribe`: model optimized for speed and cost. Cost: estimated $0.003 per minute of audio
-- `gpt-4o-transcribe`: model optimized for accuracy. Cost: estimated $0.006 per minute of audio
-- `whisper-1`: original `whisper-large-v2` model. Superseded by `gpt-4o-mini-transcribe` and `gpt-4o-transcribe`. Cost: $0.006 per minute of audio
+- `gpt-4o-mini-transcribe`: model optimized for speed and cost. Cost: estimated `$0.003` per minute of audio
+- `gpt-4o-transcribe`: model optimized for accuracy. Cost: estimated `$0.006` per minute of audio
+- `whisper-1`: original `whisper-large-v2` model. Superseded by `gpt-4o-mini-transcribe` and `gpt-4o-transcribe`. Cost: `$0.006` per minute of audio
 
 ## Error
 
